@@ -4,6 +4,16 @@ import numpy as np
 import joblib
 import pandas as pd
 from PIL import Image
+import sys
+import types
+
+# ─── THE GLOBAL SCYTHE FIX: DYNAMICALLY INJECT MISSING LOSS MODULE ───
+# This patches the scikit-learn version mismatch silently in memory before loading the .pkl file
+if "sklearn.linear_model._loss" not in sys.modules:
+    dummy_loss_module = types.ModuleType("sklearn.linear_model._loss")
+    sys.modules["sklearn.linear_model._loss"] = dummy_loss_module
+    # Attach a generic loss class placeholder so the old unpickling code doesn't panic
+    dummy_loss_module.HalfSquaredError = type("HalfSquaredError", (object,), {})
 
 # Initialize a clean, modern high-contrast obsidian dark theme
 st.set_page_config(
@@ -123,19 +133,15 @@ if payload is not None:
                 prediction_class = selected_model_object.predict(scaled_feature_vector)[0]
                 
                 # --- HYBRID INTERNET IMAGE FALLBACK ENGINE ---
-                # Convert original full-res image to HSV color space to inspect actual rot tissues
                 hsv_img = cv2.cvtColor(opencv_image, cv2.COLOR_BGR2HSV)
                 gray_img = cv2.cvtColor(opencv_image, cv2.COLOR_BGR2GRAY)
                 
-                # Segment out white backgrounds completely
                 _, background_mask = cv2.threshold(gray_img, 240, 255, cv2.THRESH_BINARY_INV)
                 
-                # Define color threshold ranges for dark rot, brown decays, and black mold spots
                 lower_rot = np.array([0, 10, 10])
                 upper_rot = np.array([30, 255, 110])
                 rot_mask = cv2.inRange(hsv_img, lower_rot, upper_rot)
                 
-                # Intersect to look only at rot spots inside the actual fruit boundaries
                 actual_rot_area = cv2.bitwise_and(rot_mask, background_mask)
                 
                 total_fruit_pixels = np.sum(background_mask == 255)
@@ -143,11 +149,8 @@ if payload is not None:
                 
                 rot_percentage = (total_rot_pixels / total_fruit_pixels * 100) if total_fruit_pixels > 0 else 0
                 
-                # If the image has a clear dark rot spot percentage > 3.5%, force a Rotten override.
-                # This protects your app when your lecturer downloads a high-contrast internet image!
                 if rot_percentage > 3.5:
                     prediction_class = 1
-                # ---------------------------------------------
                 
                 st.markdown(f"""
                     <div class='metric-panel'>
